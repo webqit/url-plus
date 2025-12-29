@@ -1,0 +1,54 @@
+{
+  "name": "@webqit/url-plus",
+  "publishConfig": {
+    "access": "public"
+  },
+  "title": "URL+",
+  "description": "Upgraded URL API",
+  "keywords": [
+    "url",
+    "urlpattern",
+    "urlsearchparams"
+  ],
+  "homepage": "https://url-plus.netlify.app/",
+  "icon": "https://webqit.io/icon.svg",
+  "version": "0.1.0",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/webqit/url-plus.git"
+  },
+  "bugs": {
+    "url": "https://github.com/webqit/url-plus/issues"
+  },
+  "type": "module",
+  "exports": {
+    ".": "./src/index.js"
+  },
+  "scripts": {
+    "test": "mocha --extension .test.js --recursive --timeout 5000 --exit",
+    "build": "esbuild main=src/index.browser.js --bundle --minify --sourcemap --outdir=dist",
+    "preversion": "npm run test && npm run build && git add -A dist",
+    "postversion": "git push && git push --tags",
+    "version:next": "npm version prerelease --preid=next"
+  },
+  "dependencies": {
+    "@webqit/util": "^0.8.16",
+    "urlpattern-polyfill": "^10.1.0"
+  },
+  "peerDependencies": {
+    "@webqit/observer": "^3.8.17"
+  },
+  "devDependencies": {
+    "@webqit/observer": "^3.8.17",
+    "chai": "^4.3.4",
+    "chai-as-promised": "^7.1.1",
+    "esbuild": "^0.20.2",
+    "mocha": "^10.3.0"
+  },
+  "author": "Oxford Harrison <oxharris.dev@gmail.com>",
+  "maintainers": [
+    "Oxford Harrison <oxharris.dev@gmail.com>"
+  ],
+  "contributors": []
+}
