@@ -1,6 +1,8 @@
-if (typeof URLPattern === 'undefined') {
-    await import('urlpattern-polyfill');
-}
+(async () => {
+    if (typeof URLPattern === 'undefined') {
+        await import('urlpattern-polyfill');
+    }
+})();
 
 export class URLPatternPlus extends URLPattern {
 

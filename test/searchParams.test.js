@@ -5,27 +5,27 @@ describe('constructor normalization', () => {
 
     it('accepts query string', () => {
         const p = new URLSearchParamsPlus('?a=1&b=2');
-        expect(p.get('a')).to.equal(1);
-        expect(p.get('b')).to.equal(2);
+        expect(p.get('a')).to.equal('1');
+        expect(p.get('b')).to.equal('2');
     });
 
     it('accepts entries array', () => {
         const p = new URLSearchParamsPlus([['a', 1], ['b', 2]]);
-        expect(p.get('a')).to.equal(1);
-        expect(p.get('b')).to.equal(2);
+        expect(p.get('a')).to.equal('1');
+        expect(p.get('b')).to.equal('2');
     });
 
     it('accepts plain object', () => {
         const p = new URLSearchParamsPlus({ a: 1, b: 2 });
-        expect(p.get('a')).to.equal(1);
-        expect(p.get('b')).to.equal(2);
+        expect(p.get('a')).to.equal('1');
+        expect(p.get('b')).to.equal('2');
     });
 
     it('accepts URLSearchParams', () => {
         const native = new URLSearchParams('a=1&b=2');
         const p = new URLSearchParamsPlus(native);
-        expect(p.get('a')).to.equal(1);
-        expect(p.get('b')).to.equal(2);
+        expect(p.get('a')).to.equal('1');
+        expect(p.get('b')).to.equal('2');
     });
 
     it('accepts URLSearchParamsPlus (re-rooted)', () => {
@@ -35,8 +35,8 @@ describe('constructor normalization', () => {
         p2.set('a[c]', 2);
 
         expect(p1.get('a[c]')).to.be.null; // no shared tree
-        expect(p2.get('a[b]')).to.equal(1);
-        expect(p2.get('a[c]')).to.equal(2);
+        expect(p2.get('a[b]')).to.equal('1');
+        expect(p2.get('a[c]')).to.equal('2');
     });
 
 });
@@ -46,19 +46,19 @@ describe('path addressing', () => {
     it('supports deep object paths', () => {
         const p = new URLSearchParamsPlus();
         p.set('a[b][c]', 1);
-        expect(p.get('a[b][c]')).to.equal(1);
+        expect(p.get('a[b][c]')).to.equal('1');
     });
 
     it('supports array paths', () => {
-        const p = new URLSearchParamsPlus();
+        const p = new URLSearchParamsPlus(null, { compatMode: true });
         p.append('a[]', 1);
         p.append('a[]', 2);
 
-        expect(p.getAll('a')).to.eql([1, 2]);
+        expect(p.getAll('a[]')).to.eql(['1', '2']);
     });
 
     it('supports mixed object/array nesting', () => {
-        const p = new URLSearchParamsPlus();
+        const p = new URLSearchParamsPlus(null, { compatMode: false });
         p.append('a[b][]', 1);
         p.append('a[b][]', 2);
 
@@ -72,7 +72,7 @@ describe('path addressing', () => {
 describe('get() wrapping semantics', () => {
 
     it('wraps object subtrees', () => {
-        const p = new URLSearchParamsPlus('a[b]=1');
+        const p = new URLSearchParamsPlus('a[b]=1', { compatMode: false });
         const a = p.get('a');
 
         expect(a).to.be.instanceOf(URLSearchParamsPlus);
@@ -80,7 +80,7 @@ describe('get() wrapping semantics', () => {
     });
 
     it('wraps arrays of objects individually', () => {
-        const p = new URLSearchParamsPlus();
+        const p = new URLSearchParamsPlus(null, { compatMode: false });
         p.append('a[]', { x: 1 });
         p.append('a[]', { x: 2 });
 
@@ -92,7 +92,7 @@ describe('get() wrapping semantics', () => {
 
     it('returns primitives as-is', () => {
         const p = new URLSearchParamsPlus('a=1');
-        expect(p.get('a')).to.equal(1);
+        expect(p.get('a')).to.equal('1');
     });
 
 });
@@ -102,14 +102,14 @@ describe('mutation methods', () => {
     it('set overwrites existing value', () => {
         const p = new URLSearchParamsPlus('a=1');
         p.set('a', 2);
-        expect(p.get('a')).to.equal(2);
+        expect(p.get('a')).to.equal('2');
     });
 
     it('append converts scalar to array', () => {
         const p = new URLSearchParamsPlus();
         p.append('a', 1);
         p.append('a', 2);
-        expect(p.getAll('a')).to.eql([1, 2]);
+        expect(p.getAll('a')).to.eql(['1', '2']);
     });
 
     it('delete removes key', () => {
@@ -126,15 +126,15 @@ describe('iteration & size', () => {
     it('iterates like URLSearchParams', () => {
         const p = new URLSearchParamsPlus('a=1&b=2');
         expect([...p]).to.eql([
-            ['a', 1],
-            ['b', 2]
+            ['a', '1'],
+            ['b', '2']
         ]);
     });
 
     it('keys(), values(), entries() work', () => {
         const p = new URLSearchParamsPlus('a=1&b=2');
         expect([...p.keys()]).to.eql(['a', 'b']);
-        expect([...p.values()]).to.eql([1, 2]);
+        expect([...p.values()]).to.eql(['1', '2']);
     });
 
     it('size reflects flattened entries', () => {
@@ -165,7 +165,7 @@ describe('serialization & proxy safety', () => {
         const p = new URLSearchParamsPlus('a[b]=1');
         const json = p.json();
 
-        expect(json).to.eql({ a: { b: 1 } });
+        expect(json).to.eql({ a: { b: '1' } });
         expect(Object.getPrototypeOf(json)).to.equal(Object.prototype);
     });
 
@@ -174,7 +174,7 @@ describe('serialization & proxy safety', () => {
         const json = p.json();
 
         json.a = 2;
-        expect(p.get('a')).to.equal(2);
+        expect(p.get('a')).to.equal('2');
     });
 
 });

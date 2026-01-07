@@ -1,5 +1,5 @@
-import { ListenerRegistry, Descriptor } from '@webqit/observer';
 import { _isObject } from '@webqit/util/js/index.js';
+import { ListenerRegistry, Descriptor } from '@webqit/observer';
 import { URLSearchParamsPlus } from './URLSearchParamsPlus.js';
 import { Path } from './Path.js';
 
@@ -102,10 +102,7 @@ export class URLPlus extends URL {
         });
     }
 
-    get href() {
-        const [href] = super.href.split('?');
-        return href + this.search + this.hash;
-    }
+    get href() { return this.stringify(); }
 
     set search(val) {
         this.#update('search', () => {
@@ -115,7 +112,7 @@ export class URLPlus extends URL {
     }
 
     get search() {
-        const search = this.#searchParams.toString();
+        const search = this.#searchParams.stringify({ prettyPrint: this.#prettyPrint });
         return search ? '?' + search : '';
     }
 
@@ -133,13 +130,17 @@ export class URLPlus extends URL {
     // -------
 
     #listenersRegistry;
+    #prettyPrint;
 
-    constructor(init, baseUrl = undefined) {
+    constructor(init, baseUrl = undefined, { compatMode = false, prettyPrint = false } = {}) {
         super(init, baseUrl);
-        this.#searchParams = new URLSearchParamsPlus(super.search, () => {
-            this.#update('query');
+        this.#searchParams = new URLSearchParamsPlus(super.search, {
+            compatMode,
+            prettyPrint,
+            changeCallback: () => this.#update('query'),
         });
         this.#listenersRegistry = ListenerRegistry.getInstance(this, true);
+        this.#prettyPrint = prettyPrint;
     }
 
     #update(changedKey, exec = null) {
@@ -172,9 +173,15 @@ export class URLPlus extends URL {
         this.#searchParams._changeCallbackGC?.abort();
     }
 
-    toString() { return this.href; }
+    stringify({ prettyPrint = this.#prettyPrint } = {}) {
+        const [href] = super.href.split('?');
+        const search = this.#searchParams.stringify({ prettyPrint });
+        return href + (search ? '?' + search : '') + this.hash;
+    }
 
-    toJSON() { return this.href; }
+    toString() { return this.stringify(); }
+
+    toJSON() { return this.stringify(); }
 }
 
 const urlProperties = [

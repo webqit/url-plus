@@ -4,25 +4,58 @@ import { Observer } from '@webqit/observer';
 export class URLSearchParamsPlus extends URLSearchParams {
 
     #tree;
+
+    #compatMode;
+    get compatMode() { return this.#compatMode; }
+    #compatModeKeys = new Set;
+    #prettyPrint;
+
     #sorted = false;
     #changeCallback;
     _changeCallbackGC;
 
-    constructor(init = {}, changeCallback = null) {
+    constructor(init = {}, { compatMode = true, prettyPrint = false, changeCallback = null } = {}) {
         super();
+        this.#compatMode = compatMode;
+        this.#prettyPrint = prettyPrint;
 
         let tree;
         if (init instanceof URLSearchParamsPlus) {
             tree = structuredClone(init.json());
+            if (compatMode) {
+                this.#compatModeKeys = new Set(init.keys());
+            }
         } else if (init instanceof URLSearchParams
             || init instanceof FormData) {
             tree = Object.fromEntries(init);
+            if (compatMode) {
+                this.#compatModeKeys = new Set(init.keys());
+            }
         } else if (_isString(init)) {
-            tree = this.constructor.parse(init);
+            init = decodeURIComponent(init.replace(/^\?/, ''));
+            tree = this.constructor.parse(init, compatMode ? false : true);
+            if (compatMode) {
+                this.#compatModeKeys = new Set(
+                    init.split('&').map((q) => q.split('=')[0])
+                );
+            }
         } else if (Array.isArray(init)) {
             tree = this.constructor.fromEntries(init);
+            if (compatMode) {
+                this.#compatModeKeys = new Set(init.map(([k]) => k));
+            }
         } else if (_isObject(init)) {
             tree = init;
+            if (compatMode) {
+                this.constructor.reduceValue(init, '', (v, path, next) => {
+                    if (next) return next;
+                    if (/\[\d+\]$/.test(path)) {
+                        // Remove the trailing sqaure brackets
+                        [, path] = /^(.*)\[\d+\]$/.exec(path);
+                    }
+                    this.#compatModeKeys.add(path);
+                });
+            }
         } else {
             tree = {};
         }
@@ -42,57 +75,75 @@ export class URLSearchParamsPlus extends URLSearchParams {
     /* ───────── Instance API ───────── */
 
     get(path) {
-        const value = this.constructor.get(this.#tree, path);
+        const value = this.#get(path);
+        if (this.#compatMode
+            && Array.isArray(value)) return value[0];
+        return value;
+    }
+
+    #get(path, all = false) {
+        if (this.#compatMode
+            && !this.#compatModeKeys.has(path)) {
+            return null;
+        }
+        const value = this.constructor.get(this.#tree, path, all);
         if (value === undefined) return null;
 
         if (Array.isArray(value)) {
+            if (this.#compatMode) {
+                return value.map((v) => typeof v === 'number' ? v + '' : v);
+            }
             return value.map(v =>
-                _isObject(v) ? new URLSearchParamsPlus(v) : v
+                _isObject(v) ? new URLSearchParamsPlus(v, { compatMode: this.#compatMode }) : v
             );
         }
 
-        if (_isObject(value)) {
-            return new URLSearchParamsPlus(value);
+        if (!this.#compatMode && _isObject(value)) {
+            return new URLSearchParamsPlus(value, { compatMode: this.#compatMode });
         }
 
-        if (typeof value === 'string' && /^-?\d+(\.\d+)?$/.test(value)) {
-            return parseFloat(value);
+        if (this.#compatMode && typeof value === 'number') {
+            return value + '';
         }
 
         return value;
     }
 
+    getAll(path) {
+        const value = this.#get(path, true);
+        if (value === null) return [];
+        return Array.isArray(value) ? value : [value];
+    }
+
     set(path, value) {
+        if (this.#compatMode) {
+            this.#compatModeKeys.add(path);
+        }
         this.constructor.set(this.#tree, path, value);
         return this;
     }
 
     append(path, value) {
-        if (typeof value === 'string' && /^-?\d+(\.\d+)?$/.test(value)) {
-            value = parseFloat(value);
+        if (this.#compatMode) {
+            this.#compatModeKeys.add(path);
         }
-        const existing = this.constructor.get(this.#tree, path);
-        if (existing === undefined) {
-            this.set(path, value);
-        } else if (Array.isArray(existing)) {
-            Observer.proxy(existing).push(value);
-        } else {
-            this.set(path, [existing, value]);
-        }
+        this.constructor.set(this.#tree, path, value, true/* appendIfExists */);
         return this;
     }
 
-    getAll(path) {
-        const value = this.get(path);
-        if (value === null) return [];
-        return Array.isArray(value) ? value : [value];
-    }
-
     has(path) {
+        if (this.#compatMode
+            && !this.#compatModeKeys.has(path)) {
+            return false;
+        }
         return this.constructor.get(this.#tree, path) !== undefined;
     }
 
     delete(path) {
+        if (this.#compatMode
+            && !this.#compatModeKeys.has(path)) {
+            return;
+        }
         const parts = this.constructor.parsePath(path);
         const key = parts.pop();
         const parent = parts.length
@@ -109,20 +160,32 @@ export class URLSearchParamsPlus extends URLSearchParams {
         return this;
     }
 
-    json() {
-        return Observer.unproxy(this.#tree);
+    json() { return Observer.unproxy(this.#tree); }
+
+    stringify({ prettyPrint = this.#prettyPrint } = {}) {
+        return this.constructor.stringify(this.#tree, {
+            only: this.#compatMode && this.#compatModeKeys,
+            sorted: this.#sorted,
+            prettyPrint,
+        });
     }
 
-    toString() {
-        return this.constructor.stringify(this.#tree, '&', this.#sorted);
-    }
+    toString() { return this.stringify(); }
 
     entries() {
         const out = [];
         this.constructor.reduceValue(this.#tree, '', (v, path, next) => {
             if (next) return next;
-            if (typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v)) {
-                v = parseFloat(v);
+            if (this.#compatMode && !this.#compatModeKeys.has(path)) {
+                if (/\[\d+\]$/.test(path)) {
+                    // Try without the trailing sqaure brackets
+                    [, path] = /^(.*)\[\d+\]$/.exec(path);
+                    if (!this.#compatModeKeys.has(path)
+                        && !this.#compatModeKeys.has(path = `${path}[]`)) return;
+                } else return;
+            }
+            if (this.#compatMode && typeof v === 'number') {
+                v = v + '';
             }
             out.push([path, v]);
         });
@@ -155,7 +218,7 @@ export class URLSearchParamsPlus extends URLSearchParams {
 
     /* ───────── Static utilities ───────── */
 
-    static parse(str, delim = '&') {
+    static parse(str, parseNums = false, delim = '&') {
         const tree = {};
         (str.startsWith('?') ? str.slice(1) : str)
             .split(delim)
@@ -163,8 +226,8 @@ export class URLSearchParamsPlus extends URLSearchParams {
             .forEach(q => {
                 const i = q.indexOf('=');
                 const key = i === -1 ? q : q.slice(0, i);
-                const val = i === -1 ? '' : decodeURIComponent(q.slice(i + 1));
-                this.set(tree, key, val);
+                const val = i === -1 ? '' : q.slice(i + 1);
+                this.set(tree, key, val, true/* appendIfExists */, parseNums);
             });
         return tree;
     }
@@ -172,12 +235,12 @@ export class URLSearchParamsPlus extends URLSearchParams {
     static fromEntries(entries) {
         const tree = {};
         for (const [k, v] of entries) {
-            this.set(tree, k, v);
+            this.set(tree, k, v, true/* appendIfExists */);
         }
         return tree;
     }
 
-    static stringify(tree, delim = '&', sorted = false) {
+    static stringify(tree, { sorted = false, only = null, prettyPrint = false, delim = '&' } = {}) {
         const q = [];
         const keys = Object.keys(tree);
         if (sorted) keys.sort();
@@ -185,39 +248,60 @@ export class URLSearchParamsPlus extends URLSearchParams {
         keys.forEach(k => {
             this.reduceValue(tree[k], k, (v, path, suggested) => {
                 if (suggested) return sorted ? [...suggested].sort() : suggested;
-                q.push(`${path}=${encodeURIComponent(v)}`);
-            });
+                if (only && !only.has(path)) {
+                    if (/\[\d+\]$/.test(path)) {
+                        // Try without the trailing sqaure brackets
+                        [, path] = /^(.*)\[\d+\]$/.exec(path);
+                        if (!only.has(path)
+                            && !only.has(path = `${path}[]`)) return;
+                    } else return;
+                }
+                if (!prettyPrint) {
+                    path = encodeURIComponent(path);
+                }
+                q.push(path + '=' + encodeURIComponent(v));
+            }, (prettyPrint ? true : false)/* encodeOffsets */);
         });
 
         return q.join(delim);
     }
 
-    static get(tree, path) {
+    static get(tree, path, allowGetAll = false) {
         return this.reducePath(path, tree, (k, t, branch) => {
             if (branch) return branch;
+            if (k === '') {
+                if (allowGetAll) return t;
+                return t?.[0];
+            }
             return t?.[k];
         });
     }
 
-    static set(tree, path, value) {
+    static set(tree, path, value, appendIfExists = false, parseNums = false) {
         this.reducePath(path, tree, (k, t, branch) => {
             let v = branch ?? value;
-            if (typeof v === 'string' && /^-?\d+(\.\d+)?$/.test(v)) {
+            if (parseNums && /^-?\d+(\.\d+)?$/.test(v + '')) {
                 v = parseFloat(v);
             }
             if (k === '' && Array.isArray(t)) Observer.proxy(t).push(v);
-            else Observer.set(t, k, v);
+            else if (appendIfExists && t?.[k]) {
+                if (Array.isArray(t[k])) Observer.proxy(t[k]).push(v);
+                else Observer.set(t, k, [t[k], v]);
+            } else Observer.set(t, k, v);
             return v;
         });
     }
 
-    static reduceValue(value, ctx, cb) {
+    static reduceValue(value, ctx, cb, encodeOffsets = false) {
         if (_isTypeObject(value)) {
             const keys = Object.keys(value);
             const next = cb(value, ctx, keys);
             if (Array.isArray(next)) {
                 next.forEach(k => {
-                    this.reduceValue(value[k], ctx ? `${ctx}[${k}]` : k, cb)
+                    if (encodeOffsets) {
+                        k = encodeURIComponent(k);
+                    }
+                    this.reduceValue(value[k], ctx ? `${ctx}[${k}]` : k, cb, encodeOffsets)
                 });
                 return;
             }
@@ -252,7 +336,7 @@ export class URLSearchParamsPlus extends URLSearchParams {
         path.replace(/\[([^\]]*)\]|([^[\]]+)/g, (_, b, p) => {
             out.push(b ?? p);
         });
-        
+
         return out;
     }
 }

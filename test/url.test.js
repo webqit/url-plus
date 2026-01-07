@@ -1,6 +1,11 @@
 import { expect } from 'chai';
-import { URLPlus } from '../src/URLPlus.js';
+import { URLPlus, URLSearchParamsPlus } from '../src/index.js';
 import { Observer } from '@webqit/observer';
+
+const encodeSearch = (s) => {
+    if (s.startsWith('?')) return `?${encodeSearch(s.slice(1))}`;
+    return s.split(/=/g).map((s) => s.split('&').map((s) => encodeURIComponent(s)).join('&')).join('=');
+};
 
 describe('URLPlus – construction', () => {
 
@@ -45,8 +50,8 @@ describe('URLPlus – query synchronization', () => {
 
         url.query = { a: 1, b: { c: 2 } };
 
-        expect(url.search).to.eq('?a=1&b[c]=2');
-        expect(url.href).to.eq('https://x.test/?a=1&b[c]=2');
+        expect(url.search).to.eq(encodeSearch('?a=1&b[c]=2'));
+        expect(url.href).to.eq(`https://x.test/${encodeSearch('?a=1&b[c]=2')}`);
     });
 
     it('updates query when search is replaced', () => {
@@ -55,8 +60,8 @@ describe('URLPlus – query synchronization', () => {
         url.search = '?x=1&y[z]=2';
 
         expect(url.query).to.eql({
-            x: 1,
-            y: { z: 2 }
+            x: '1',
+            y: { z: '2' }
         });
     });
 
@@ -79,7 +84,7 @@ describe('URLPlus – live searchParams behavior', () => {
         url.searchParams.set('a[b]', 1);
 
         expect(url.query).to.eql({ a: { b: 1 } });
-        expect(url.search).to.eq('?a[b]=1');
+        expect(url.search).to.eq(encodeSearch('?a[b]=1'));
     });
 
     it('append creates arrays', () => {
@@ -89,7 +94,7 @@ describe('URLPlus – live searchParams behavior', () => {
 
         expect(url.query).to.eql({ a: [1, 2] });
         // arrays serialize with explicit numeric indices
-        expect(url.search).to.eq('?a[0]=1&a[1]=2');
+        expect(url.search).to.eq(encodeSearch('?a[0]=1&a[1]=2'));
     });
 
     it('delete removes keys', () => {
@@ -98,7 +103,7 @@ describe('URLPlus – live searchParams behavior', () => {
         url.searchParams.delete('a[b]');
 
         expect(url.query).to.eql({ a: { c: 2 } });
-        expect(url.search).to.eq('?a[c]=2');
+        expect(url.search).to.eq(encodeSearch('?a[c]=2'));
     });
 
 });
