@@ -37,7 +37,7 @@ At its core, URL+ provides two things:
 1. **Reactive URLs** — a `URL` whose fields can be observed for changes
 2. **Object‑backed query parameters** — `searchParams` with a real object model behind it
 
-Yet all of that comes as a progressive enhancement over the native `URL` and `URLSearchParams` primitives.
+All of this builds directly on the native `URL` and `URLSearchParams` semantics.
 
 For example, URL+ works like the native `URL` and `URLSearchParams` by default:
 
@@ -62,7 +62,7 @@ console.log(url.query); // { foo: 'bar' }
 Observer.observe(url, 'href', (mutation) => {
     console.log(mutation.value); // 'https://example.com/level1/level2/level3?foo=bar'
 });
-url.path = '/level1/level2/level3';
+url.pathname = '/level1/level2/level3';
 
 // Deep, fine-grained observation
 Observer.observe(url.query, 'foo', (mutation) => {
@@ -125,7 +125,7 @@ This tree is returned _by reference_ and is mutable.
 ### Mutating the Tree
 
 
-This tree is the authoritative source of truth for the query string. Mutations to the tree is reflected in the query string:
+This tree is the authoritative source of truth for the query string. Mutations to the tree are reflected in the query string:
 
 ```js
 tree.c = 3;
