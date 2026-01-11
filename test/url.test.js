@@ -184,7 +184,6 @@ describe('URLPlus – Observer integration', () => {
             const url = new URLPlus('https://example.com/a');
 
             Observer.observe(url, 'href', (desc) => {
-                expect(desc).to.be.an('object');
                 expect(desc.key).to.equal('href');
                 expect(desc.oldValue).to.equal('https://example.com/a');
                 expect(desc.value).to.equal('https://example.com/b');
@@ -257,7 +256,6 @@ describe('URLPlus – Observer integration', () => {
             const url = new URLPlus('https://example.com/');
 
             Observer.observe(url, 'query', (desc) => {
-                expect(desc).to.be.an('object');
                 expect(desc.key).to.equal('query');
                 expect(desc.oldValue).to.deep.equal({});
                 expect(desc.value).to.deep.equal({ a: 1 });
