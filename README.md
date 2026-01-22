@@ -1,10 +1,10 @@
-# URL+ — Reactive URLs with Object‑Backed Query Parameters
+# URL+ — Reactive, Object‑Backed URLs
 
 [![npm version][npm-version-src]][npm-version-href]
 [![bundle][bundle-src]][bundle-href]
 [![License][license-src]][npm-version-href]
 
-**URL+** extends the web’s `URL` and `URLSearchParams` primitives with reactivity and a real object model.
+**URL+** extends the web’s native `URL` and `URLSearchParams` primitives with **reactivity**, **bidirectional state convergence**, and **first‑class object models** for both paths and query parameters.
 
 ---
 
@@ -22,7 +22,6 @@ import { URLPlus, URLSearchParamsPlus, Observer } from '@webqit/url-plus';
 
 ```html
 <script src="https://unpkg.com/@webqit/url-plus/dist/main.js"></script>
-
 <script>
     const { URLPlus, URLSearchParamsPlus, Observer } = window.webqit;
 </script>
@@ -32,83 +31,104 @@ import { URLPlus, URLSearchParamsPlus, Observer } from '@webqit/url-plus';
 
 ## Overview
 
-At its core, URL+ provides two things:
-
-1. **Reactive URLs** — a `URL` with an object model and whose fields can be observed for changes
-2. **Object‑backed query parameters** — `searchParams` with an object model and whose fields can be observed for changes
-
-All of this builds directly on the native `URL` and `URLSearchParams` semantics.
-
-For example, URL+ works like the native `URL` and `URLSearchParams` by default:
+URL+ builds directly on the semantics of the platform `URL` and `URLSearchParams` APIs. `URLPlus` and `URLSearchParamsPlus` are a drop-in replacement each:
 
 ```js
 const url = new URLPlus('https://example.com/level1/level2/level3?foo=bar');
 
-console.log(url.pathname); // '/level1/level2/level3'
-console.log(url.search); // '?foo=bar'
-console.log(url.searchParams.get('foo')); // 'bar'
+console.log(url.pathname);                  // '/level1/level2/level3'
+console.log(url.search);                    // '?foo=bar'
+console.log(url.searchParams.get('foo'));   // 'bar'
 ```
 
-But it lets you do more:
+URL+ offers additional capabilities on top of this baseline.
+
+At a high level:
+
+* **`URLSearchParamsPlus`** provides a *single, structured source of truth* for query parameters, with deterministic synchronization between an object tree, traversal APIs, and serialized query strings.
+* **`URLPlus`** is a *reactive coordinator* over the full URL state, ensuring that mutations to paths, queries, and serialized forms all converge on the same underlying model and remain observable.
+
+### 1. Path Object Model
 
 ```js
-// A new ".segments" field
 console.log(url.segments); // ['level1', 'level2', 'level3']
 ```
 
-```js
-// A new ".dirname" field
-console.log(url.dirname); // '/level1/level2'
-```
+`segments` is the authoritative representation of the URL's path.
+
+### 2. POSIX-Style Derived Paths
 
 ```js
-// A new ".basename" field
+console.log(url.dirname);  // '/level1/level2'
 console.log(url.basename); // 'level3'
 ```
 
-```js
-// A new ".query" field – an object model of url's query params
-console.log(url.query); // { foo: 'bar' }
-```
+These fields are derived views over the same underlying path.
+
+### 3. Query Object Model
 
 ```js
-// Observability
+console.log(url.query);     // { foo: 'bar' }
+```
+
+`query` is the authoritative representation of the URL's query string.
+
+### 4. Observability
+
+Every part of the URL state is observable.
+
+```js
 Observer.observe(url, 'href', (mutation) => {
     console.log(mutation.value);
 });
+
 url.pathname = '/level1/level2/level3/level4';
-// console: 'https://example.com/level1/level2/level3/level4?foo=bar'
+// console → 'https://example.com/level1/level2/level3/level4?foo=bar'
+```
 
-// -------
+Observability can be fine‑grained and deep:
 
-// Deep, fine-grained observability
+```js
 Observer.observe(url.query, 'foo', (mutation) => {
     console.log(mutation.value);
 });
+
 url.searchParams.set('foo', 'baz');
-// console: 'bar'
+// console → 'baz'
 ```
 
+### 5. Immutability
+
+URL+ can be constructed into an immutable (read‑only) mode:
+
 ```js
-// A new immutability mode
-const url = new URLPlus('https://example.com/level1/level2?foo=bar', undefined, { immutable: true });
+const url = new URLPlus(
+    'https://example.com/level1/level2?foo=bar',
+    undefined,
+    { immutable: true }
+);
 
 console.log(url.immutable); // true
 
-url.pathname = '/new/path'; // throws
-url.query.baz = 'b'; // throws
-url.segments.push('level4'); // throws
+url.pathname = '/new/path';   // throws
+url.query.baz = 'b';          // throws
+url.segments.push('level4');  // throws
 ```
 
-URL+'s capabilities start with `URLSearchParamsPlus`.
+In immutable mode, the instance behaves as a stable *value* while still supporting reads and serialization.
 
 ---
 
 ## URLSearchParamsPlus
 
-`URLSearchParamsPlus` extends the standard `URLSearchParams` interface with a persistent object model and deterministic synchronization between that object tree and the serialized query string.
+`URLSearchParamsPlus` extends the standard `URLSearchParams` interface with:
 
-Internally, parameters are always represented as structured data. This internal representation exists regardless of how the instance is configured or mutated.
+* a persistent, structured object tree
+* deterministic synchronization between object mutations and serialization
+* full observability across all mutation paths
+* an optional *structural mode* that exposes the object model to traversal APIs
+
+Internally, parameters are **always** represented as structured data.
 
 ### Construction
 
@@ -117,7 +137,7 @@ new URLSearchParamsPlus(init?, options?)
 ```
 
 * `init` may be a query string, iterable, plain object, or another params instance
-+ `options` controls compatibility mode and serialization behavior
+* `options` controls compatibility mode and serialization behavior
 
 ```js
 // Strings
@@ -132,106 +152,110 @@ const params4 = new URLSearchParamsPlus(new URLSearchParams('a=1&b=2'));
 const params5 = new URLSearchParamsPlus(new URLSearchParamsPlus('a=1&b=2'));
 ```
 
+```js
+console.log(params instanceof URLSearchParams); // true
+```
+
 ### The Internal Object Tree
 
-Every `URLSearchParamsPlus` instance maintains a live object tree representing the semantic structure of the query.
-
-This tree can be accessed via:
+Each instance maintains a live object tree representing the semantic structure of the query string:
 
 ```js
-const tree = params.json();
+const query = params.json();
 ```
 
 ```js
 const params = new URLSearchParamsPlus('a=1&b=2');
-const tree = params.json();
+const query = params.json();
 
-console.log(tree); // { a: 1, b: 2 }
+console.log(query); // { a: 1, b: 2 }
 ```
 
-This tree is returned _by reference_ and is mutable.
+The object tree is the authoritative source of truth for the query string.
+
+The returned object is **by reference** and fully mutable.
 
 ### Mutating the Tree
 
-
-This tree is the authoritative source of truth for the query string. Mutations to the tree are reflected in the query string:
+Being the authoritative source of truth, all mutations to tree are immediately reflected in the serialized query string:
 
 ```js
-tree.c = 3;
+query.c = 3;
 params.toString(); // 'a=1&b=2&c=3'
 
-delete tree.a;
+delete query.a;
 params.toString(); // 'b=2&c=3'
 ```
 
-The instance mutation APIs all converge on the tree:
+All instance‑level mutation APIs converge on the same tree:
 
 ```js
 params.set('d', 4);
-console.log(tree); // { b: 2, c: 3, d: 4 }
+console.log(query); // { b: 2, c: 3, d: 4 }
 ```
 
 ### Observing the Tree
 
-The tree is fully observable across all modes of mutation:
+The tree is observable regardless of how mutations are performed:
 
 ```js
-Observer.observe(tree, (mutations) => {
+Observer.observe(query, (mutations) => {
     console.log(mutations[0].key, mutations[0].value);
 });
 
-// Reactive mutation via instance API
-params.set('e', 5); // Console: "e", 5
+// Mutation via instance API
+params.set('e', 5);      // console → e 5
 
-// Reactive mutation via the Observer API
-Observer.set(tree, 'e', 6); // Console: "e", 6
+// Mutation via Observer API
+Observer.set(query, 'e', 6); // console → e 6
 ```
 
 ### Addressing the Tree
 
-URLSearchParamsPlus lets you address this model deeply using paths:
+At mutation, bracket notation is interpreted as a path into the object tree:
 
 ```js
 const params = new URLSearchParamsPlus();
-const tree = params.json();
+const query = params.json();
 
 params.set('a[b][c]', 1);
-console.log(tree); // { a: { b: { c: 1 } } }
+console.log(query); // { a: { b: { c: 1 } } }
 
-tree.a.b.c = 2;
-console.log(params.toString()); // 'a%5Bb%5D%5Bc%5D=2'
-console.log(params.stringify({ prettyPrint: true })); // 'a[b][c]=2'
+query.a.b.c = 2;
+console.log(params.toString());                         // 'a%5Bb%5D%5Bc%5D=2'
+console.log(params.stringify({ prettyPrint: true }));   // 'a[b][c]=2'
 ```
 
 ```js
 const params = new URLSearchParamsPlus('a[b][c]=1');
-const tree = params.json();
+const query = params.json();
 
-console.log(tree); // { a: { b: { c: 1 } } }
+console.log(query); // { a: { b: { c: 1 } } }
 ```
 
-By comparing, the `URLSearchParams` API does accept the bracket notation on key names but not with
-any specific semantics attached. It's just a string.
+This contrasts with native `URLSearchParams`, where any bracket notation in keys have no special semantics attached.
 
-`URLSearchParamsPlus` lets that address the underlying object model, while aligning with the
-surface behavior of the `URLSearchParams` API:
+### Compatibility Mode (Default)
 
-_Traversal is by literal string identifiers, not by path_:
+By default, instances are created with `compatMode: true`. It makes `URLSearchParamsPlus` work as a drop-in replacement for `URLSearchParams`.
+
+In this mode, traversal APIs behave *exactly* like `URLSearchParams`:
+
+* keys are literal strings
+* traversal does not interpret structure
 
 ```js
 const params1 = new URLSearchParams('a[b][]=1&a[b][]=2');
 const params2 = new URLSearchParamsPlus('a[b][]=1&a[b][]=2');
 
-// Keys are just strings that must match strictly
 console.log(params1.get('a[b][]')); // '1'
 console.log(params2.get('a[b][]')); // '1'
 
 console.log(params1.getAll('a[b][]')); // ['1', '2']
 console.log(params2.getAll('a[b][]')); // ['1', '2']
 
-// ...not interpreted structurally
-console.log(params1.get('a[b]')); // null
 console.log(params2.get('a[b]')); // null
+console.log(params2.get('a[b][0]')); // null
 
 console.log(params1.get('a[b][0]')); // null
 console.log(params2.get('a[b][0]')); // null
@@ -240,7 +264,7 @@ console.log(params1.getAll('a[b]')); // []
 console.log(params2.getAll('a[b]')); // []
 ```
 
-_Enumeration and stringification expose exact strings as set:_
+Enumeration and stringification preserve the literal keys exactly as set:
 
 ```js
 // Enumaration
@@ -257,79 +281,50 @@ console.log(params2.toString()); // 'a%5Bb%5D%5B%5D=1&a%5Bb%5D%5B%5D=2'
 console.log(params2.stringify({ prettyPrint: true })); // 'a[b][]=1&a[b][]=2'
 ```
 
-But this alignment with the `URLSearchParams` API is only one of two modes with the `URLSearchParamsPlus` API – and the default. `URLSearchParamsPlus` lets you opt out of this
-"compatibility" with `URLSearchParams` into full structural mode:
+### Structural Mode (Opt-In)
+
+Structural mode is where the full power of `URLSearchParamsPlus` lives. Opt-in is via: `compatMode: false`.
+
+In this mode, the instance exposes the object tree directly to its traversal APIs – instead of just its mutation APIs:
 
 ```js
-const params = new URLSearchParamsPlus(null, { compatMode: false });
-```
-
-In this mode, URLSearchParamsPlus exposes its internal tree to its traversal APIs – not just its mutation APIs:
-
-_Query keys are interpreted as paths into that tree:_
-
-```js
-const params2 = new URLSearchParamsPlus('a[b][]=1&a[b][]=2', { compatMode: false });
+const params = new URLSearchParamsPlus(
+    'a[b][]=1&a[b][]=2',
+    { compatMode: false }
+);
 
 // Keys are interpreted structurally
-console.log(params2.get('a[b][]')); // 1
-console.log(params2.get('a[b][0]')); // 1
-console.log(params2.get('a[b][1]')); // 2
+console.log(params.get('a[b][]')); // 1
+console.log(params.get('a[b][0]')); // 1
+console.log(params.get('a[b][1]')); // 2
 
 // Traverse in and out the structure
-console.log(params2.get('a[b]')); // [1, 2]
-console.log(params2.get('a')); // URLSearchParamsPlus { b: [1, 2] }
+console.log(params.get('a[b]')); // [1, 2]
+console.log(params.get('a')); // URLSearchParamsPlus { b: [1, 2] }
 
 // Traverse in and out programmatically
-console.log(params2.get('a').get('b')); // [1, 2]
+console.log(params.get('a').get('b')); // [1, 2]
 
 // Mutate by reference
-console.log(params2.get('a').get('b').pop()); // 2
-console.log(params2.get('a[b]')); // [1]
+console.log(params.get('a').get('b').pop()); // 2
+console.log(params.get('a[b]')); // [1]
 ```
 
-_Enumeration and stringification expose fully-qualified paths:_
+Enumeration and stringification expose fully‑qualified paths:
 
 ```js
 // Enumaration
-console.log([...params2.keys()]); // ['a[b][0]', 'a[b][1]']
-console.log([...params2.entries()]); // [['a[b][0]', 1], ['a[b][1]', 2]]
+console.log([...params.keys()]); // ['a[b][0]', 'a[b][1]']
+console.log([...params.entries()]); // [['a[b][0]', 1], ['a[b][1]', 2]]
 
 // Stringification
-console.log(params2.toString()); // 'a%5Bb%5D%5B0%5D=1&a%5Bb%5D%5B1%5D=2'
-console.log(params2.stringify({ prettyPrint: true })); // 'a[b][0]=1&a[b][1]=2'
-```
-
-### Observing the Tree Deeply
-
-The tree can be observed to any depth:
-
-```js
-// Observe a key
-Observer.observe(tree, 'a', (mutation) => {
-    console.log(mutation.key, mutation.value);
-});
-
-// Observe 2-levels deep
-Observer.observe(tree, Observer.path('a', 'b'), (mutation) => {
-    console.log(mutation.path, mutation.key, mutation.value);
-});
-
-// Observe full depth
-Observer.observe(tree, Observer.subtree(), (mutations) => {
-    console.log(mutations.map((m) => m.path, m.key, m.value));
-});
-
-// Reactive mutation via instance API
-params.set('a[b][c]', 5);
-
-// Reactive mutation via the Observer API
-Observer.set(tree.a.b, 'c', 6);
+console.log(params.toString()); // 'a%5Bb%5D%5B0%5D=1&a%5Bb%5D%5B1%5D=2'
+console.log(params.stringify({ prettyPrint: true })); // 'a[b][0]=1&a[b][1]=2'
 ```
 
 ### Value Semantics
 
-In structural mode, values retain their actual types in the tree.
+In structural mode, values retain their actual types.
 
 For strings passed to the constuctor for hydration, numeric values are sensibly cast to numbers during parsing:
 
@@ -339,7 +334,7 @@ const params = new URLSearchParamsPlus('a=39', { compatMode: false });
 params.json().a; // 39
 ```
 
-Programmatic sets preserve exact value types:
+Programmatic mutations preserve exact types:
 
 ```js
 params.set('x', 39);
@@ -349,50 +344,42 @@ params.json().x; // 39
 params.json().y; // '39'
 ```
 
-### The Default Mode vs Structural Mode Comparison
+### Mode Comparison
 
-| Aspect | Default Mode (`compatMode: true`) | Structural Mode (`compatMode: false`) |
-| --- | --- | --- |
-| Key Interpretation | Literal strings | Structural paths |
-| Traversal | By literal strings | By paths |
-| Enumeration | By literal strings | By fully-qualified paths |
-| Stringification | By literal strings | By fully-qualified paths |
-| Value Semantics | Always strings | Actual types as set |
-
-Default mode provides **exact `URLSearchParams` behavior**.
+| Aspect             | Default Mode (`compatMode: true`) | Structural Mode (`compatMode: false`) |
+| ------------------ | --------------------------------- | ------------------------------------- |
+| Key interpretation | Literal strings                   | Structural paths                      |
+| Traversal          | Literal                           | Path‑based                            |
+| Enumeration        | Literal keys                      | Fully‑qualified paths                 |
+| Stringification    | Literal                           | Fully‑qualified paths                 |
+| Value semantics    | Strings                           | Preserved types                       |
 
 ### Serialization Options
 
-#### Bracket Encoding
-
-By default, bracket characters are percent‑encoded to match native behavior.
+By default, bracket characters are percent‑encoded as par native behavior:
 
 ```js
-const params = new URLSearchParamsPlus('a[b][0]=1');
-
-params.toString(); // a%5Bb%5D%5B0%5D=1
+params.toString(); // 'a%5Bb%5D%5B0%5D=1'
 ```
 
-For readability, this can be disabled:
+Pretty printing can be enabled for readability:
 
 ```js
 const params = new URLSearchParamsPlus(null, { prettyPrint: true });
+
+params.toString(); // 'a[b][0]=1'
+params.stringify({ prettyPrint: false }); // 'a%5Bb%5D%5B0%5D=1'
 ```
 
-```js
-params.toString(); // a[b][0]=1
-params.stringify({ prettyPrint: false }); // a%5Bb%5D%5B0%5D=1
-```
-
-+ `toString()` always returns the canonical, spec-aligned representation.
-+ `stringify()` allows formatting control.
-+ The constructor lets you set a default for `prettyPrint`.
+* `toString()` always returns the canonical representation
+* `stringify()` allows formatting control
+* constructor options define defaults
 
 ---
 
 ## URLPlus
 
-`URLPlus` is a reactive extension of the standard `URL` interface.
+`URLPlus` is a reactive extension of the standard `URL` interface. It coordinates multiple *views* over the same underlying URL state and guarantees bidirectional convergence between them.
 
 ### Construction
 
@@ -427,73 +414,49 @@ url.hash;                   // ''
 url.href;                   // 'https://example.com/a/b?x=1'
 ```
 
-### The Existing Update Model
+```js
+console.log(url instanceof URL); // true
+```
 
-Mutating one field updates the others:
+### Field Convergence
+
+As with native behaviour, mutating one field updates all related fields:
 
 ```js
 url.pathname = '/a/b/c';
 
-console.log(url.href);              // 'https://example.com/a/b/c?x=1'
+console.log(url.href);     // 'https://example.com/a/b/c?x=1'
 console.log(url.dirname);  // '/a/b'
 ```
 
 ```js
 url.href = 'https://example.com/x/y?x=2';
 
-console.log(url.pathname);          // '/x/y'
-console.log(url.dirname);  // '/x'
-console.log(url.searchParams);      // URLSearchParamsPlus { x: 2 }
-console.log(url.query);             // { x: 2 }
-console.log(url.search);            // '?x=2'
+console.log(url.pathname);     // '/x/y'
+console.log(url.dirname);      // '/x'
+console.log(url.searchParams); // URLSearchParamsPlus { x: 2 }
+console.log(url.query);        // { x: 2 }
 ```
 
-### ...With Observability
+### Path Object Model (`segments`)
 
-Each URL field can be observed via the `Observer` API.
+URLPlus maintains its path as a live array, exposed as `segments`:
 
 ```js
-Observer.observe(url, 'href', mutation => {
-    console.log('href →', mutation.value);
-});
-
-url.pathname = '/p/q';
-// href → https://example.com/p/q?x=1
+url.segments; // ['a', 'b']
 ```
 
-Observation works symmetrically:
+This array is the authoritative path for the instance. Mutations propagate to all derived fields:
 
 ```js
-Observer.observe(url, 'pathname', mutation => {
-    console.log('pathname →', mutation.value);
-});
+url.segments.push('c');
 
-url.href = 'https://example.com/m/n?x=1';
-// Console: pathname → /m/n
+url.pathname; // '/a/b/c'
+url.dirname;  // '/a/b'
+url.basename; // 'c'
 ```
 
-Observers react to the resulting state in each case.
-
-### ...With an Object Model
-
-`URLPlus` maintains its pathname as a live array. It is exposed as `segmenets`:
-
-```js
-url.segmenets; // ['a', 'b', 'c']
-```
-
-This array is the authoritative path for URL. Mutating it reflects on `pathname`, `dirname`, `basename`, and `href`:
-
-```js
-url.segments.push('d');
-
-url.pathname; // '/a/b/c/d'
-url.dirname;  // '/a/b/c'
-url.basename; // 'd'
-url.href;     // 'https://example.com/a/b/c/d'
-```
-
-Conversely, every "path" mutation pathway – `pathname`, `dirname`, `basename`, and `href` – converges back on segments:
+All path mutation pathways converge back on `segments`:
 
 ```js
 url.dirname = '/a/a/a/b/b/b/c/c/c';
@@ -504,99 +467,15 @@ url.basename; // 'd'
 url.href;     // 'https://example.com/a/a/a/b/b/b/c/c/c/d'
 ```
 
-Segments is observable even at the element level:
+### Query Integration (`query`)
 
-```js
-Observer.observe(url.segments, mutations => {
-    console.log('segment →', mutations[0].key, mutations[0].value);
-});
-
-url.href = 'https://example.com/m/n?x=1';
-// Console: segment → 0 'n'
-```
-
-Direct mutation to the array is observable when made reactively:
-
-```js
-Observer.set(url.segments, 0, 'n');
-Observer.proxy(url.segments).push('m');
-Observer.proxy(url.segments).splice();
-```
-
-### ...With POSIX-Style Path Accessors
-
-In addition to `pathname`, URLPlus exposes two POSIX-style path accessors: `dirname` and `basename`.
-
-These are derived views over the underlying `segments` array and behave consistently with familiar filesystem semantics.
-
-```js
-const url = new URLPlus('https://example.com/a/b/c');
-
-url.pathname; // '/a/b/c'
-url.dirname;  // '/a/b'
-url.basename; // 'c'
-```
-
-#### `basename`
-
-`basename` represents the final path segment – that is, the last entry in `segments`. If the path is empty, `basename` is an empty string.
-
-Setting `basename` replaces that same segment. If the path is empty, setting `basename` is no-op.
-
-#### `dirname`
-
-`dirname` represents the parent path — all segments except the final one. It's essentially the result of `segments.slice(0, -1)`. If the path is empty, `dirname` is an empty string.
-
-Setting `dirname` replaces the leading portion of the path, with existing `basename` preserved. If the path is empty, setting `dirname` is no-op.
-
-### ...With an Immutable Mode
-
-`URLPlus` can be constructed in immutable mode:
-
-```js
-const url = new URLPlus('https://example.com/a/b?x=1', null, {
-    immutable: true
-});
-```
-
-In this mode, the instance becomes read-only; all mutations are forbidden:
-
-+ All mutating setters throw
-+ `segments` is frozen
-+ `query` is deeply frozen
-+ `searchParams` mutation APIs are blocked
-
-```js
-// Forbids writes
-url.segments.push('c'); // throws
-url.query.x = 2;        // throws
-url.searchParams.set('x', 2); // throws
-url.pathname = '/x';    // throws
-```
-
-```js
-// Supports reads
-url.pathname; // '/a/b'
-url.dirname;  // '/a'
-url.query;    // { x: '1' }
-```
-
-```js
-// Supports sorting
-url.searchParams.stringify({ sorted: true }); // 'x=1'
-```
-
-Essentially, the instance behaves as stable _value_.
-
-### Query Parameters
-
-The Search Params (`.searchParams`) is backed by `URLSearchParamsPlus`:
+The instance's `searchParams` is backed by `URLSearchParamsPlus`:
 
 ```js
 url.searchParams instanceof URLSearchParamsPlus; // true
 ```
 
-The special `.query` field is a direct reference to the underlying object model of the search params:
+The instance's `query` field is a direct reference to the underlying object model of `searchParams`:
 
 ```js
 url.query === url.searchParams.json(); // true
@@ -608,7 +487,7 @@ console.log(url.query); // { x: 1 }
 
 This object is live.
 
-Mutating it updates the Search Params, and therefore, the URL:
+Mutating it updates `searchParams`, and therefore, the URL:
 
 ```js
 url.query.a = { b: [1, 2] };
@@ -641,15 +520,84 @@ console.log(url.query);             // { x: { y: { z: 9 } } }
 
 All mutation paths converge on the same underlying state.
 
-### Observing the Full Structure
+### POSIX-Style Derived Paths (`basename`, `dirname`)
 
-Because the query object is part of the URL’s state, deep observers work across all mutation paths.
+In addition to `pathname`, URLPlus exposes two POSIX-style path accessors: `dirname` and `basename`.
+
+These are derived views over the underlying `segments` array and behave consistently with familiar filesystem semantics.
+
+```js
+const url = new URLPlus('https://example.com/a/b/c');
+
+url.pathname; // '/a/b/c'
+url.dirname;  // '/a/b'
+url.basename; // 'c'
+```
+
+#### `basename`
+
+`basename` represents the final path segment – that is, the last entry in `segments`. If the original path is empty (or the root path: `/`), `basename` is an empty string.
+
+Setting `basename` replaces that same segment. If the original path is empty (or the root path: `/`), setting `basename` is no-op.
+
+#### `dirname`
+
+`dirname` represents the parent path — all segments except the final one. It's essentially the result of `segments.slice(0, -1)`. If the original path is empty (or the root path: `/`), `dirname` is an empty string.
+
+Setting `dirname` replaces the leading portion of the path, with existing `basename` preserved. If the original path is empty (or the root path: `/`), setting `dirname` is no-op.
+
+### Observability
+
+Each URL field can be observed via the `Observer` API:
+
+```js
+Observer.observe(url, 'href', mutation => {
+    console.log('href →', mutation.value);
+});
+
+url.pathname = '/p/q';
+// href → https://example.com/p/q?x=1
+```
+
+Observation works symmetrically:
+
+```js
+Observer.observe(url, 'pathname', mutation => {
+    console.log('pathname →', mutation.value);
+});
+
+url.href = 'https://example.com/m/n?x=1';
+// Console: pathname → /m/n
+```
+
+`query` and `segments` are observable down to the element level:
+
+```js
+Observer.observe(url.segments, mutations => {
+    console.log(mutations[0].key, mutations[0].value);
+});
+
+url.href = 'https://example.com/m/n?x=1';
+// console → 0 'm'
+```
+
+For both `query` and `segments`, direct mutations are observable when made reactively:
+
+```js
+Observer.set(url.query, 'a', 'bar');
+```
+
+```js
+Observer.set(url.segments, 0, 'n');
+Observer.proxy(url.segments).push('m');
+Observer.proxy(url.segments).splice();
+```
+
+Because the entire URL is reactive, deep observers can track all changes:
 
 ```js
 Observer.observe(url, Observer.subtree(), mutations => {
-    console.log(
-        mutations.map((m) => [m.path, m.key, m.value])
-    );
+    console.log(mutations.map(m => [m.path, m.key, m.value]));
 });
 ```
 
@@ -663,14 +611,64 @@ url.href = 'https://example.com/?a[b][2]=40';
 Observer.proxy(url.query.a.b).push(4);
 ```
 
+The instance can be disposed of its live bindings via `dispose()`:
+
+```js
+url.dispose();
+url.disposed; // true
+```
+
+On disposal, further mutations are no longer annouced to observers.
+
+### Immutability
+
+URLPlus can be constructed into an immutable mode:
+
+```js
+const url = new URLPlus('https://example.com/a/b?x=1', null, {
+    immutable: true
+});
+url.immutable; // true
+```
+
+In this mode, the instance becomes read-only and mutations are forbidden:
+
++ All mutating setters throw
++ `segments` is frozen
++ `query` is deeply frozen
++ `searchParams` mutation APIs are blocked
+
+```js
+// Forbids writes
+url.segments.push('c'); // throws
+url.query.x = 2;        // throws
+url.searchParams.set('x', 2); // throws
+url.pathname = '/x';    // throws
+```
+
+```js
+// Supports reads
+url.pathname; // '/a/b'
+url.dirname;  // '/a'
+url.query;    // { x: '1' }
+```
+
+```js
+// Supports sorting
+url.searchParams.stringify({ sort: true }); // 'x=1'
+```
+
+Essentially, the instance works as a stable _value_ across time.
+
 ### Mode Switch and Serialization Options
 
 `URLPlus` options object can be used to configure the compatibility mode and serialization behavior of its search params.
 
 ```js
 const url = new URLPlus('https://example.com?a[b]=1', null, {
-    compatMode: false,
-    prettyPrint: true
+    compatMode: true, // default
+    immutable: false // default
+    prettyPrint: false // default
 });
 
 console.log(url.searchParams.toString()); // a[b]=1
@@ -678,8 +676,6 @@ console.log(url.searchParams.stringify({ prettyPrint: false })); // a%5Bb%5D=1
 
 console.log(url.stringify({ prettyPrint: false })); // https://example.com?a%5Bb%5D=1
 ```
-
----
 
 ## License
 

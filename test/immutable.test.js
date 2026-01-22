@@ -157,7 +157,7 @@ describe('URLPlus – immutable mode', () => {
                 { immutable: true }
             );
 
-            const sorted = url.searchParams.stringify({ sorted: true });
+            const sorted = url.searchParams.stringify({ sort: true });
             expect(sorted).to.equal('a=1&b=2');
         });
 

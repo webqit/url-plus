@@ -161,10 +161,10 @@ export class URLSearchParamsPlus extends URLSearchParams {
 
     json() { return this.#tree; }
 
-    stringify({ prettyPrint = this.#prettyPrint, sorted = this.#sorted } = {}) {
+    stringify({ prettyPrint = this.#prettyPrint, sort = this.#sorted } = {}) {
         return this.constructor.stringify(this.#tree, {
             only: this.#compatMode && this.#compatModeKeys,
-            sorted,
+            sort,
             prettyPrint,
         });
     }
@@ -239,14 +239,14 @@ export class URLSearchParamsPlus extends URLSearchParams {
         return tree;
     }
 
-    static stringify(tree, { sorted = false, only = null, prettyPrint = false, delim = '&' } = {}) {
+    static stringify(tree, { sort = false, only = null, prettyPrint = false, delim = '&' } = {}) {
         const q = [];
         const keys = Object.keys(tree);
-        if (sorted) keys.sort();
+        if (sort) keys.sort();
 
         keys.forEach(k => {
             this.reduceValue(tree[k], k, (v, path, suggested) => {
-                if (suggested) return sorted ? [...suggested].sort() : suggested;
+                if (suggested) return sort ? [...suggested].sort() : suggested;
                 if (only && !only.has(path)) {
                     if (/\[\d+\]$/.test(path)) {
                         // Try without the trailing sqaure brackets
