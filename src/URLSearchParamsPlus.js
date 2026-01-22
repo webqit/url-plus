@@ -3,7 +3,7 @@ import { Observer } from '@webqit/observer';
 
 export class URLSearchParamsPlus extends URLSearchParams {
 
-    #tree;
+    #tree = {};
 
     #compatMode;
     get compatMode() { return this.#compatMode; }
@@ -11,10 +11,8 @@ export class URLSearchParamsPlus extends URLSearchParams {
     #prettyPrint;
 
     #sorted = false;
-    #changeCallback;
-    _changeCallbackGC;
 
-    constructor(init = {}, { compatMode = true, prettyPrint = false, changeCallback = null } = {}) {
+    constructor(init = {}, { compatMode = true, prettyPrint = false } = {}) {
         super();
         this.#compatMode = compatMode;
         this.#prettyPrint = prettyPrint;
@@ -60,16 +58,17 @@ export class URLSearchParamsPlus extends URLSearchParams {
             tree = {};
         }
 
-        this._changeCallback = changeCallback;
         this._resetJson(tree);
     }
 
-    _resetJson(tree) {
-        this.#tree = Observer.proxy(tree);
-        if (this.#changeCallback) {
-            this._changeCallbackGC?.abort();
-            this._changeCallbackGC = Observer.observe(this.#tree, Observer.subtree(), this.#changeCallback);
-        }
+    _resetJson(tree, params = {}) {
+        if (!_isObject(tree)) throw new Error('Argument must be a JSON object');
+
+        const exitingKeys = Object.keys(this.#tree).filter((key) => !(key in tree));
+        return Observer.batch(this.#tree, () => {
+            if (exitingKeys.length) { Observer.deleteProperties(this.#tree, exitingKeys, params); }
+            return Observer.set(this.#tree, tree, params);
+        }, params);
     }
 
     /* ───────── Instance API ───────── */
@@ -160,12 +159,12 @@ export class URLSearchParamsPlus extends URLSearchParams {
         return this;
     }
 
-    json() { return Observer.unproxy(this.#tree); }
+    json() { return this.#tree; }
 
-    stringify({ prettyPrint = this.#prettyPrint } = {}) {
+    stringify({ prettyPrint = this.#prettyPrint, sorted = this.#sorted } = {}) {
         return this.constructor.stringify(this.#tree, {
             only: this.#compatMode && this.#compatModeKeys,
-            sorted: this.#sorted,
+            sorted,
             prettyPrint,
         });
     }

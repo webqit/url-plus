@@ -40,8 +40,8 @@ describe('URLPlus – query synchronization', () => {
         const url = new URLPlus('https://x.test/?a=1&b[c]=2');
 
         expect(url.query).to.eql({
-            a: 1,
-            b: { c: 2 }
+            a: '1',
+            b: { c: '2' }
         });
     });
 
@@ -50,8 +50,10 @@ describe('URLPlus – query synchronization', () => {
 
         url.query = { a: 1, b: { c: 2 } };
 
-        expect(url.search).to.eq(encodeSearch('?a=1&b[c]=2'));
-        expect(url.href).to.eq(`https://x.test/${encodeSearch('?a=1&b[c]=2')}`);
+        // In compatMode
+        // direct query mutations to "query" doesn't reflect in "search"
+        expect(url.search).to.eq('');
+        expect(url.href).to.eq(`https://x.test/`);
     });
 
     it('updates query when search is replaced', () => {
@@ -88,7 +90,7 @@ describe('URLPlus – live searchParams behavior', () => {
     });
 
     it('append creates arrays', () => {
-        const url = new URLPlus('https://x.test/?a=1');
+        const url = new URLPlus('https://x.test/?a=1', undefined, { compatMode: false });
 
         url.searchParams.append('a', 2);
 
@@ -102,18 +104,18 @@ describe('URLPlus – live searchParams behavior', () => {
 
         url.searchParams.delete('a[b]');
 
-        expect(url.query).to.eql({ a: { c: 2 } });
+        expect(url.query).to.eql({ a: { c: '2' } });
         expect(url.search).to.eq(encodeSearch('?a[c]=2'));
     });
 
 });
 
-describe('URLPlus – pathname and ancestorPathname', () => {
+describe('URLPlus – pathname and dirname', () => {
 
-    it('computes ancestorPathname', () => {
+    it('computes dirname', () => {
         const url = new URLPlus('https://x.test/a/b/c');
 
-        expect(url.ancestorPathname).to.eq('/a/b');
+        expect(url.dirname).to.eq('/a/b');
     });
 
     it('updates pathname correctly', () => {
@@ -134,7 +136,6 @@ describe('URLPlus.copy()', () => {
         const copy = URLPlus.copy(url);
 
         expect(copy).to.eql({
-            ancestorPathname: '/',
             protocol: 'https:',
             username: '',
             password: '',
@@ -142,12 +143,25 @@ describe('URLPlus.copy()', () => {
             hostname: 'x.test',
             port: '',
             origin: 'https://x.test',
+            segments: ['a'],
             pathname: '/a',
+            dirname: '/',
+            basename: 'a',
             search: '?b=1',
-            query: { b: 1 },
+            query: { b: '1' },
             hash: '#c',
             href: 'https://x.test/a?b=1#c'
         });
+    });
+
+    it('produces a detached snapshot', () => {
+        const url = new URLPlus('https://x.test/a?b=1');
+
+        const copy = URLPlus.copy(url);
+
+        copy.query.b = 2;
+
+        expect(url.query.b).to.equal('1');
     });
 
 });
@@ -170,6 +184,154 @@ describe('URLPlus – dispose()', () => {
         const url = new URLPlus('https://x.test/?a=1');
 
         expect(() => url.dispose()).to.not.throw();
+    });
+
+});
+
+describe('URLPlus – segments direct mutation', () => {
+
+    it('mutating segments updates pathname, dirname, basename, and href', () => {
+        const url = new URLPlus('https://x.test/a/b');
+
+        url.segments.push('c');
+
+        expect(url.pathname).to.equal('/a/b/c');
+        expect(url.dirname).to.equal('/a/b');
+        expect(url.basename).to.equal('c');
+        expect(url.href).to.equal('https://x.test/a/b/c');
+    });
+
+    it('replacing segments array contents preserves reactivity', () => {
+        const url = new URLPlus('https://x.test/a/b');
+
+        url.segments.splice(0, 2, 'x', 'y');
+
+        expect(url.pathname).to.equal('/x/y');
+        expect(url.dirname).to.equal('/x');
+        expect(url.basename).to.equal('y');
+    });
+
+    it('clearing segments collapses path to root', () => {
+        const url = new URLPlus('https://x.test/a/b');
+
+        url.segments.length = 0;
+
+        expect(url.pathname).to.equal('/');
+        expect(url.dirname).to.equal('');
+        expect(url.basename).to.equal('');
+        expect(url.href).to.equal('https://x.test/');
+    });
+
+});
+
+describe('URLPlus – dirname setter', () => {
+
+    it('replaces parent directories while preserving basename', () => {
+        const url = new URLPlus('https://x.test/a/b/c');
+
+        url.dirname = '/x/y';
+
+        expect(url.pathname).to.equal('/x/y/c');
+        expect(url.dirname).to.equal('/x/y');
+        expect(url.basename).to.equal('c');
+    });
+
+    it('setting dirname to root preserves basename', () => {
+        const url = new URLPlus('https://x.test/a');
+
+        url.dirname = '/';
+
+        expect(url.pathname).to.equal('/a');
+        expect(url.dirname).to.equal('/');
+        expect(url.basename).to.equal('a');
+    });
+
+    it('setting dirname on empty path is a no-op', () => {
+        const url = new URLPlus('https://x.test/');
+
+        url.dirname = '/x';
+
+        expect(url.pathname).to.equal('/');
+        expect(url.href).to.equal('https://x.test/');
+    });
+
+});
+
+describe('URLPlus – basename setter', () => {
+
+    it('updates only the terminal path segment', () => {
+        const url = new URLPlus('https://x.test/a/b');
+
+        url.basename = 'c';
+
+        expect(url.pathname).to.equal('/a/c');
+        expect(url.dirname).to.equal('/a');
+    });
+
+    it('throws if basename contains slash', () => {
+        const url = new URLPlus('https://x.test/a');
+
+        expect(() => {
+            url.basename = 'x/y';
+        }).to.throw(/must not contain a slash/);
+    });
+
+    it('setting basename on empty path is a no-op', () => {
+        const url = new URLPlus('https://x.test/');
+
+        url.basename = 'a';
+
+        expect(url.pathname).to.equal('/');
+        expect(url.basename).to.equal('');
+    });
+
+});
+describe('URLPlus – segments setter', () => {
+
+    it('replaces path using a new segments array', () => {
+        const url = new URLPlus('https://x.test/a/b');
+
+        url.segments = ['x', 'y', 'z'];
+
+        expect(url.pathname).to.equal('/x/y/z');
+        expect(url.dirname).to.equal('/x/y');
+        expect(url.basename).to.equal('z');
+    });
+
+    it('throws if segments is not an array', () => {
+        const url = new URLPlus('https://x.test/a');
+
+        expect(() => {
+            url.segments = 'a/b';
+        }).to.throw(/Argument must be an array/);
+    });
+
+});
+
+describe('URLPlus – href setter normalization', () => {
+
+    it('replaces pathname, query, and hash consistently', () => {
+        const url = new URLPlus('https://x.test/a?b=1#c', undefined, { compatMode: false });
+
+        url.href = 'https://x.test/x/y?z=2#k';
+
+        expect(url.pathname).to.equal('/x/y');
+        expect(url.query).to.eql({ z: '2' });
+        expect(url.hash).to.equal('#k');
+        expect(url.href).to.equal('https://x.test/x/y?z=2#k');
+    });
+
+});
+
+describe('URLPlus – searchParams.sort()', () => {
+
+    it('sorts serialized search without mutating query structure', () => {
+        const url = new URLPlus('https://x.test/?b=2&a=1');
+
+        url.searchParams.sort();
+
+        expect(url.search).to.equal('?a=1&b=2');
+        expect(url.query).to.eql({ b: '2', a: '1' });
     });
 
 });
@@ -229,7 +391,7 @@ describe('URLPlus – Observer integration', () => {
     describe('query subtree mutation', () => {
 
         it('emits query/search/href batch when subtree mutates', () => {
-            const url = new URLPlus('https://example.com/?a[b]=1');
+            const url = new URLPlus('https://example.com/?a[b]=1', undefined, { prettyPrint: true });
 
             Observer.observe(url, (descs) => {
                 expect(descs).to.be.an('array');
@@ -283,6 +445,21 @@ describe('URLPlus – Observer integration', () => {
             });
 
             Observer.set(url.query, 'a', 2);
+        });
+
+        it('stops observer notifications after dispose', () => {
+            const url = new URLPlus('https://x.test/a');
+
+            let called = false;
+
+            Observer.observe(url, () => {
+                called = true;
+            });
+
+            url.dispose();
+            url.pathname = '/b';
+
+            expect(called).to.equal(false);
         });
 
     });
