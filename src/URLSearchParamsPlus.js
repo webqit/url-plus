@@ -30,12 +30,10 @@ export class URLSearchParamsPlus extends URLSearchParams {
                 this.#compatModeKeys = new Set(init.keys());
             }
         } else if (_isString(init)) {
-            init = decodeURIComponent(init.replace(/^\?/, ''));
-            tree = this.constructor.parse(init, compatMode ? false : true);
+            let keys;
+            [tree, keys] = this.constructor.parse(init, compatMode ? false : true, true);
             if (compatMode) {
-                this.#compatModeKeys = new Set(
-                    init.split('&').map((q) => q.split('=')[0])
-                );
+                this.#compatModeKeys = keys;
             }
         } else if (Array.isArray(init)) {
             tree = this.constructor.fromEntries(init);
@@ -217,17 +215,14 @@ export class URLSearchParamsPlus extends URLSearchParams {
 
     /* ───────── Static utilities ───────── */
 
-    static parse(str, parseNums = false, delim = '&') {
+    static parse(str, parseNums = false, compileKeys = false) {
         const tree = {};
-        (str.startsWith('?') ? str.slice(1) : str)
-            .split(delim)
-            .filter(Boolean)
-            .forEach(q => {
-                const i = q.indexOf('=');
-                const key = i === -1 ? q : q.slice(0, i);
-                const val = i === -1 ? '' : q.slice(i + 1);
-                this.set(tree, key, val, true/* appendIfExists */, parseNums);
-            });
+        const keys = new Set;
+        for (const [k, v] of new URLSearchParams(str).entries()) {
+            this.set(tree, k, v, true/* appendIfExists */, parseNums);
+            if (compileKeys) keys.add(k);
+        }
+        if (compileKeys) return [tree, keys];
         return tree;
     }
 
@@ -239,8 +234,10 @@ export class URLSearchParamsPlus extends URLSearchParams {
         return tree;
     }
 
-    static stringify(tree, { sort = false, only = null, prettyPrint = false, delim = '&' } = {}) {
-        const q = [];
+    static stringify(tree, { sort = false, only = null, prettyPrint = false } = {}) {
+        const pC = {};
+        const qP = [];
+
         const keys = Object.keys(tree);
         if (sort) keys.sort();
 
@@ -255,14 +252,17 @@ export class URLSearchParamsPlus extends URLSearchParams {
                             && !only.has(path = `${path}[]`)) return;
                     } else return;
                 }
-                if (!prettyPrint) {
-                    path = encodeURIComponent(path);
+                if (prettyPrint) {
+                    qP.push(path + '=' + (new URLSearchParams({ k: v || ''})).toString().split('=')[1]);
+                } else {
+                    pC[path] = v;
                 }
-                q.push(path + '=' + encodeURIComponent(v));
-            }, (prettyPrint ? true : false)/* encodeOffsets */);
+            });
         });
 
-        return q.join(delim);
+        if (prettyPrint) return qP.join('&');
+
+        return new URLSearchParams(pC).toString();
     }
 
     static get(tree, path, allowGetAll = false) {
@@ -291,16 +291,13 @@ export class URLSearchParamsPlus extends URLSearchParams {
         });
     }
 
-    static reduceValue(value, ctx, cb, encodeOffsets = false) {
+    static reduceValue(value, ctx, cb) {
         if (_isTypeObject(value)) {
             const keys = Object.keys(value);
             const next = cb(value, ctx, keys);
             if (Array.isArray(next)) {
                 next.forEach(k => {
-                    if (encodeOffsets) {
-                        k = encodeURIComponent(k);
-                    }
-                    this.reduceValue(value[k], ctx ? `${ctx}[${k}]` : k, cb, encodeOffsets)
+                    this.reduceValue(value[k], ctx ? `${ctx}[${k}]` : k, cb)
                 });
                 return;
             }
